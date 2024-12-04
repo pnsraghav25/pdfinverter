@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>PDF Color Inverter and Crop from URL</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="font-sans bg-gray-100 text-gray-700 lg:px-80 mt-12">
+        <h2 class="text-3xl text-teal-900 font-semibold mb-12 text-center">Choose a PDF to Invert Colors and Crop</h2>
+        
+        <div class="mb-12 inline-flex w-full items-center sm:gap-12 gap-4">
+            <input type="file" id="pdf-upload" accept=".pdf" class="
+            file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-100 file:text-teal-900 file:hover:cursor-pointer
+            hover:file:bg-teal-200 w-3/4 grow p-3 border border-gray-300 rounded-lg text-sm" />
+            <button id="load-pdf-btn" class="px-4 py-2 bg-teal-100 text-teal-900 border border-teal-200 hover:shadow-lg hover:shadow-teal-200 rounded-xl hover:bg-teal-200 font-semibold">Load PDF</button>
+        </div>
+        
+        <div class="mb-12 inline-flex w-full items-center sm:gap-12 gap-4">
+            <input type="text" id="pdf-url" placeholder="Enter PDF URL" class="w-3/4 grow p-3 border border-gray-300 rounded-lg text-sm bg-gray-100" />
+            <button id="load-pdf-url-btn" class="px-4 py-2 bg-teal-100 text-teal-900 border border-teal-200 hover:shadow-lg hover:shadow-teal-200 rounded-xl hover:bg-teal-200 font-semibold">Load PDF</button>
+        </div>
+
+        <div class="mb-12">
+            <label for="crop-option" class="flex items-center">
+                <input type="checkbox" id="crop-option" class="mr-2 accent-teal-300">
+                <span class="text-sm">Crop PDF by 60 pixels from top (If unchecked, no crop will be applied)</span>
+            </label>
+        </div>
+        <button id="download-btn" class="hidden mt-12 px-4 py-2 bg-teal-100 text-teal-900 border border-teal-200 hover:shadow-lg hover:shadow-teal-200 rounded-xl hover:bg-teal-200 font-semibold">Download Inverted and Cropped PDF</button>
+        <div id="pdf-container" class="mt-12 flex flex-col items-center overflow-x-auto space-y-4"></div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+        <script>
+            let pdfDoc = null;
+            let totalPages = 0;
+            let invertedCanvasData = [];
+            let pageDimensions = [];
+            let originalFileName = '';
+            
+        
+            const cropHeight = 60;
+
+        
+            const renderPage = async (pageNum, shouldCrop) => {
+                const page = await pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1 });
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+            
+                if (shouldCrop) {
+                    canvas.height = viewport.height - cropHeight;
+                } else {
+                    canvas.height = viewport.height;
+                }
+                canvas.width = viewport.width;
+
+            
+                pageDimensions.push({ width: canvas.width, height: canvas.height });
+
+            
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+            
+                invertCanvasColors(ctx, canvas.width, canvas.height);
+
+            
+                document.getElementById('pdf-container').appendChild(canvas);
+
+            
+                invertedCanvasData.push(canvas);
+            };
+
+        
+            const invertCanvasColors = (ctx, width, height) => {
+                const imageData = ctx.getImageData(0, 0, width, height);
+                const data = imageData.data;
+
+            
+                for (let i = 0; i < data.length; i += 4) {
+                    data[i] = 255 - data[i];    
+                    data[i + 1] = 255 - data[i + 1];
+                    data[i + 2] = 255 - data[i + 2];
+                
+                }
+
+            
+                ctx.putImageData(imageData, 0, 0);
+            };
+
+        
+            const loadPDFFromURL = (url, shouldCrop) => {
+            
+                document.getElementById('download-btn').style.display = 'none';
+
+                fetch(url)
+                    .then(response => response.arrayBuffer())
+                    .then(data => {
+                        pdfjsLib.getDocument(data).promise.then((pdf) => {
+                            pdfDoc = pdf;
+                            totalPages = pdfDoc.numPages;
+
+                        
+                            originalFileName = url.split('/').pop().replace(/\.[^/.]+$/, "");
+
+                        
+                            renderPageInOrder(1, shouldCrop);
+                        }).catch(err => {
+                            console.error('Error loading PDF:', err);
+                            alert('Failed to load PDF. Please check the URL and try again.');
+                        });
+                    }).catch(err => {
+                        console.error('Error fetching PDF from URL:', err);
+                        alert('Failed to fetch PDF from the provided URL.');
+                    });
+            };
+
+        
+            const renderPageInOrder = async (pageNum, shouldCrop) => {
+                if (pageNum > totalPages) {
+                
+                    document.getElementById('download-btn').style.display = 'block';
+                    return;
+                }
+                
+                await renderPage(pageNum, shouldCrop);
+                renderPageInOrder(pageNum + 1, shouldCrop);
+            };
+
+        
+            const loadPDFFromUpload = (file, shouldCrop) => {
+            
+                document.getElementById('download-btn').style.display = 'none';
+
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const pdfData = new Uint8Array(e.target.result);
+
+                    pdfjsLib.getDocument(pdfData).promise.then((pdf) => {
+                        pdfDoc = pdf;
+                        totalPages = pdfDoc.numPages;
+
+                    
+                        originalFileName = file.name.replace(/\.[^/.]+$/, "");
+
+                    
+                        renderPageInOrder(1, shouldCrop);
+                    }).catch(err => {
+                        console.error('Error loading PDF:', err);
+                        alert('Failed to load PDF. Please try again.');
+                    });
+                };
+                reader.readAsArrayBuffer(file);
+            };
+
+        
+            document.getElementById('load-pdf-url-btn').addEventListener('click', () => {
+                const url = document.getElementById('pdf-url').value.trim();
+                const shouldCrop = document.getElementById('crop-option').checked;
+                if (url) {
+                
+                    document.getElementById('pdf-container').innerHTML = '';
+                    invertedCanvasData = [];
+                    pageDimensions = [];
+                    loadPDFFromURL(url, shouldCrop);
+                } else {
+                    alert('Please enter a valid PDF URL.');
+                }
+            });
+
+        
+            document.getElementById('load-pdf-btn').addEventListener('click', () => {
+                const file = document.getElementById('pdf-upload').files[0];
+                const shouldCrop = document.getElementById('crop-option').checked;
+                if (file) {
+                
+                    document.getElementById('pdf-container').innerHTML = '';
+                    invertedCanvasData = [];
+                    pageDimensions = [];
+                    loadPDFFromUpload(file, shouldCrop);
+                } else {
+                    alert('Please select a PDF file.');
+                }
+            });
+
+        
+            const downloadInvertedAndCroppedPDF = async () => {
+                const { PDFDocument } = window.PDFLib;
+                const doc = await PDFDocument.create();
+
+            
+                for (let i = 0; i < invertedCanvasData.length; i++) {
+                    const canvas = invertedCanvasData[i];
+                    const imgData = canvas.toDataURL('image/jpeg');
+                    const imgBytes = await fetch(imgData).then(res => res.arrayBuffer());
+
+                    const page = doc.addPage([pageDimensions[i].width, pageDimensions[i].height]);
+                    const image = await doc.embedJpg(imgBytes);
+                    page.drawImage(image, { x: 0, y: 0, width: pageDimensions[i].width, height: pageDimensions[i].height });
+                }
+
+            
+                const pdfBytes = await doc.save();
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+            
+                const downloadName = `${originalFileName} - invert.pdf`;
+
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = downloadName;
+                link.click();
+            };
+
+        
+            document.getElementById('download-btn').addEventListener('click', downloadInvertedAndCroppedPDF);
+        </script>
+    </body>
+</html>
